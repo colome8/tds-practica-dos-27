@@ -210,9 +210,28 @@ function renderReservations() {
 
     if (isCurrent) {
       const actions = makeElement('div', 'reservation-actions');
-      // TODO PRACTICE 2:
+
       // Add an extension action for eligible reservations and connect it to
       // the extension form. Keep the cancellation action working.
+      const extendButton = makeElement(
+        'button',
+        'button button-secondary',
+        'Extender'
+      );
+
+      extendButton.type = 'button';
+
+      extendButton.addEventListener('click', () => {
+        const currentForm = card.querySelector('.extend-form');
+
+        if (currentForm) {
+          currentForm.remove();
+          return;
+        }
+
+        card.append(createExtendForm(reservation));
+      });
+
       const cancelButton = makeElement('button', 'button button-danger', 'Cancelar');
       cancelButton.type = 'button';
       cancelButton.addEventListener('click', () => {
@@ -224,7 +243,7 @@ function renderReservations() {
         }
         cancelReservation(reservation._id, cancelButton);
       });
-      actions.append(cancelButton);
+      actions.append(extendButton, cancelButton);
       card.append(actions);
     }
     reservationsList.append(card);
@@ -243,9 +262,69 @@ function createExtendForm(reservation) {
   const message = makeElement('p', 'extend-message');
   message.setAttribute('role', 'alert');
   form.append(label, button, message);
-  // TODO PRACTICE 2:
+
   // Read the requested time, send the extension request, handle the result,
   // and refresh the affected views when the operation succeeds.
+  const currentEnd = new Date(reservation.endTime);
+  const suggestedEnd = new Date(currentEnd.getTime() + 60 * 60 * 1000);
+
+  input.min = localDateTime(new Date(currentEnd.getTime() + 60 * 1000));
+  input.value = localDateTime(suggestedEnd);
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    message.textContent = '';
+
+    const newEnd = new Date(input.value);
+
+    if (Number.isNaN(newEnd.getTime()) || newEnd <= currentEnd) {
+      message.textContent =
+        'La nueva hora debe ser posterior a la hora final actual.';
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = 'Guardando...';
+
+    try {
+      const response = await fetch(
+        `/api/reservations/${reservation._id}/extend`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endTime: newEnd.toISOString() })
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 409) {
+          message.textContent =
+            'La reservación no puede extenderse o existe un conflicto.';
+        } else if (response.status === 404) {
+          message.textContent = 'La reservación ya no existe.';
+        } else {
+          message.textContent = 'La nueva hora final no es válida.';
+        }
+        return;
+      }
+
+      await Promise.all([loadReservations(), loadSpots()]);
+
+      setMessage(
+        reservationsMessage,
+        'Reservación extendida correctamente.',
+        'success'
+      );
+    } catch (error) {
+      console.error(error);
+      message.textContent =
+        'No fue posible extender la reservación.';
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Guardar extensión';
+    }
+  });
+  
   return form;
 }
 
